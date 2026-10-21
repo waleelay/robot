@@ -17,9 +17,12 @@ import com.robot.control.auth.RequestAuthorizationHeaders;
 import com.robot.control.call.FieldCallService;
 import com.robot.control.call.IntercomCallService;
 import com.robot.control.client.ControlManagementClient;
+import com.robot.control.messaging.EquipmentControlCommandPublisher;
 import com.robot.control.service.EquipmentControlService;
 import com.robot.control.trajectory.TrajectoryCoordinator;
 import java.util.Map;
+import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -223,5 +226,36 @@ class MediaWebSocketHandlerTest {
         org.assertj.core.api.Assertions.assertThat(response.getValue().getPayload())
                 .contains("request-unsupported-001")
                 .contains("UNSUPPORTED_MESSAGE_TYPE");
+    }
+
+    @Test
+    void rejectsEquipmentCommandWithoutOperatorRoleBeforeMqtt() throws Exception {
+        MediaWebSocketPublisher publisher = mock(MediaWebSocketPublisher.class);
+        EquipmentControlCommandPublisher commands = mock(EquipmentControlCommandPublisher.class);
+        ControlManagementClient management = mock(ControlManagementClient.class);
+        when(management.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(Map.of(
+                "serialNumber", "robot-001", "components", List.of())));
+        EquipmentControlService control = new EquipmentControlService(commands, publisher, management);
+        CurrentUserResolver resolver = mock(CurrentUserResolver.class);
+        WebSocketSession session = mock(WebSocketSession.class);
+        when(session.getId()).thenReturn("ws-viewer");
+        when(session.getAttributes()).thenReturn(Map.of());
+        when(resolver.resolve(session)).thenReturn(new CurrentUser("viewer", "org-1", Set.of(), "client-1"));
+        MediaWebSocketHandler handler = new MediaWebSocketHandler(
+                publisher, new ObjectMapper(), control, mock(IntercomCallService.class),
+                mock(FieldCallService.class), resolver, mock(RequestAuthorizationHeaders.class),
+                management, mock(TrajectoryCoordinator.class));
+        handler.afterConnectionEstablished(session);
+
+        handler.handleTextMessage(session, new TextMessage("""
+                {"type":"control.command","requestId":"req-denied","payload":{
+                  "robotId":"robot-001","target":{"deviceId":"base"},"action":"drive.velocity"}}
+                """));
+
+        ArgumentCaptor<TextMessage> response = ArgumentCaptor.forClass(TextMessage.class);
+        verify(publisher).send(eq(session), response.capture());
+        assertThat(response.getValue().getPayload())
+                .contains("req-denied", "control.command.rejected", "装备操作权限");
+        verify(commands, never()).publishCommand(eq("robot-001"), org.mockito.ArgumentMatchers.any());
     }
 }

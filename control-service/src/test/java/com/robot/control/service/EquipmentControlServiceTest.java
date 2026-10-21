@@ -24,6 +24,7 @@ import org.springframework.web.socket.WebSocketSession;
 import com.robot.control.client.ControlManagementClient;
 import com.robot.control.messaging.EquipmentControlCommandPublisher;
 import com.robot.control.ws.MediaWebSocketPublisher;
+import java.lang.reflect.Constructor;
 import java.time.OffsetDateTime;
 import java.time.Duration;
 import java.util.LinkedHashMap;
@@ -40,6 +41,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 /** 验证统一设备控制的目标选择、参数校验和命令下发。 */
 class EquipmentControlServiceTest {
@@ -522,15 +524,21 @@ class EquipmentControlServiceTest {
     @Test
     void rejectsLauncherFireUnlessLatestStateExplicitlyAllowsIt() {
         register(component("PAYLOAD", "launcher_38mm"));
+        online("手动模式");
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("launcher_38mm"),
+                "actions", List.of("fire")), operator());
         Map<String, Object> request = object(
+                "controlSessionId", session.get("controlSessionId"),
                 "target", object("deviceId", "launcher_38mm"),
                 "action", "fire",
                 "params", object("tube", 3),
                 "client", object("seq", 7));
 
+        reportLauncherState(false, true, true);
         assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
                 .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("未明确连接");
+                .hasMessageContaining("目标设备离线");
 
         reportLauncherState(true, false, true);
         assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
@@ -548,9 +556,14 @@ class EquipmentControlServiceTest {
     @Test
     void rejectsInvalidLauncherTubeInsteadOfSilentlyClampingIt() {
         register(component("PAYLOAD", "launcher_38mm"));
+        online("手动模式");
         reportLauncherState(true, true, true);
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("launcher_38mm"),
+                "actions", List.of("fire")), operator());
 
         assertThatThrownBy(() -> service.publishCommand("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
                 "target", object("deviceId", "launcher_38mm"),
                 "action", "fire",
                 "params", object("tube", 7),
@@ -1447,15 +1460,229 @@ class EquipmentControlServiceTest {
                 .containsEntry("clientId", "");
     }
 
+    @Test
+    void deniesDeviceCommandWithoutRoleLeaseOrMatchingAction() {
+        register(component("PTZ", "ptz-001"));
+        online("手动模式");
+        Map<String, Object> request = object(
+                "target", object("deviceId", "ptz-001"),
+                "action", "up", "params", object());
+        CurrentUser viewer = new CurrentUser("viewer", "org-1", Set.of(), "terminal-1");
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, viewer))
+                .hasMessageContaining("装备操作权限");
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .hasMessageContaining("controlSessionId 必填");
+
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("ptz-001"),
+                "actions", List.of("down")), operator());
+        request.put("controlSessionId", session.get("controlSessionId"));
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .hasMessageContaining("控制会话不包含动作");
+        CurrentUser otherTerminal = new CurrentUser(
+                "operator-1", "org-1", Set.of("EQUIPMENT_OPERATOR"), "terminal-2");
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, otherTerminal))
+                .hasMessageContaining("不属于当前用户或终端");
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void httpCommandRejectsViewerBeforeMqtt() throws Exception {
+        register(component("PTZ", "ptz-001"));
+        CurrentUserResolver resolver = mock(CurrentUserResolver.class);
+        when(resolver.resolve(org.mockito.ArgumentMatchers.any(jakarta.servlet.http.HttpServletRequest.class)))
+                .thenReturn(new CurrentUser("viewer", "org-1", Set.of(), "terminal-1"));
+        ControlRobotController controller = new ControlRobotController(mock(ControlVideoCommandService.class), service,
+                resolver, mock(IntercomCallService.class), mock(MultiFunctionAudioTransferService.class),
+                mock(RobotRegistryService.class));
+        var response = MockMvcBuilders.standaloneSetup(controller)
+                .setControllerAdvice(new com.robot.control.api.ApiExceptionHandler())
+                .build().perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(
+                                "/api/control/robots/robot-001/commands")
+                        .contentType("application/json")
+                        .content("""
+                                {"target":{"deviceId":"ptz-001"},"action":"up","params":{}}
+                                """)).andReturn().getResponse();
+        assertThat(response.getStatus()).isEqualTo(400);
+        assertThat(response.getContentAsString()).contains("装备操作权限");
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void consumesHighRiskConfirmationOnceAndKeepsItOutOfMqtt() {
+        register(component("PAYLOAD", "launcher_38mm"));
+        online("手动模式");
+        reportLauncherState(true, true, true);
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("launcher_38mm"),
+                "actions", List.of("fire")), operator());
+        Map<String, Object> token = service.confirmToken("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "launcher_38mm"), "action", "fire"), operator());
+        Map<String, Object> request = object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "launcher_38mm"),
+                "action", "fire", "params", object("tube", 3, "confirmToken", "confirm_invalid"));
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .hasMessageContaining("确认令牌无效");
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+
+        map(request.get("params")).put("confirmToken", token.get("confirmToken"));
+        service.publishCommand("robot-001", request, operator());
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .hasMessageContaining("确认令牌无效");
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(commandPublisher).publishCommand(eq("robot-001"), captor.capture());
+        assertThat(map(map(captor.getValue()).get("params"))).doesNotContainKey("confirmToken");
+    }
+
+    @Test
+    void confirmationIsBoundToDeviceAndControlSession() {
+        Map<String, Object> robot = object("serialNumber", "robot-001", "deviceType", "WHEELED_ROBOT",
+                "components", List.of(component("PAYLOAD", "launcher_a"), component("PAYLOAD", "launcher_b")));
+        when(managementClient.deviceBySerialNumber("robot-001")).thenReturn(Optional.of(robot));
+        online("手动模式");
+        service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(
+                        launcherRuntime("launcher_a"), launcherRuntime("launcher_b"))));
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("launcher_a", "launcher_b"),
+                "actions", List.of("fire")), operator());
+        Map<String, Object> token = service.confirmToken("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "launcher_a"), "action", "fire"), operator());
+        Map<String, Object> request = object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "launcher_b"),
+                "action", "fire", "params", object("tube", 3,
+                        "confirmToken", token.get("confirmToken")));
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .hasMessageContaining("确认令牌无效");
+
+        service.release("robot-001", String.valueOf(session.get("controlSessionId")), Map.of(), operator());
+        Map<String, Object> replacement = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("launcher_a"),
+                "actions", List.of("fire")), operator());
+        request.put("controlSessionId", replacement.get("controlSessionId"));
+        request.put("target", object("deviceId", "launcher_a"));
+        assertThatThrownBy(() -> service.publishCommand("robot-001", request, operator()))
+                .hasMessageContaining("确认令牌无效");
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void netGunRequiresConnectionAndServerCooldown() {
+        register(component("PAYLOAD", "net_catcher"));
+        online("手动模式");
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("net_catcher"),
+                "actions", List.of("fire")), operator());
+        Map<String, Object> confirmation = object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "net_catcher"), "action", "fire");
+        assertThatThrownBy(() -> service.confirmToken("robot-001", confirmation, operator()))
+                .hasMessageContaining("运行状态已失效");
+        service.handleClientState(object("robotId", "robot-001", "status", "online",
+                "devices", List.of(object("deviceId", "net_catcher", "deviceType", "NET_GUN",
+                        "onlineStatus", "online", "status", object("connected", true)))));
+        Map<String, Object> token = service.confirmToken("robot-001", confirmation, operator());
+        service.publishCommand("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "net_catcher"),
+                "action", "fire", "params", object("confirmToken", token.get("confirmToken"))), operator());
+        assertThatThrownBy(() -> service.confirmToken("robot-001", confirmation, operator()))
+                .hasMessageContaining("冷却中");
+        verify(commandPublisher).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void expiredConfirmationCannotPublish() throws Exception {
+        register(component("PAYLOAD", "launcher_38mm"));
+        online("手动模式");
+        reportLauncherState(true, true, true);
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("launcher_38mm"),
+                "actions", List.of("fire")), operator());
+        Map<String, Object> token = service.confirmToken("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "launcher_38mm"), "action", "fire"), operator());
+        @SuppressWarnings("unchecked")
+        Map<String, Object> pending = (Map<String, Object>) ReflectionTestUtils.getField(service, "confirmations");
+        Map.Entry<String, Object> entry = pending.entrySet().iterator().next();
+        Constructor<?> constructor = entry.getValue().getClass().getDeclaredConstructors()[0];
+        constructor.setAccessible(true);
+        pending.put(entry.getKey(), constructor.newInstance(
+                operator().userId(), operator().clientId(), "robot-001", "launcher_38mm",
+                "fire", session.get("controlSessionId"), OffsetDateTime.now().minusSeconds(1)));
+
+        assertThatThrownBy(() -> service.publishCommand("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "launcher_38mm"),
+                "action", "fire", "params", object("tube", 3,
+                        "confirmToken", token.get("confirmToken"))), operator()))
+                .hasMessageContaining("确认令牌无效或已过期");
+        verify(commandPublisher, never()).publishCommand(eq("robot-001"), any());
+    }
+
+    @Test
+    void concurrentFireCanConsumeConfirmationOnlyOnce() throws Exception {
+        register(component("PAYLOAD", "launcher_38mm"));
+        online("手动模式");
+        reportLauncherState(true, true, true);
+        Map<String, Object> session = service.acquire("robot-001", object(
+                "scope", "DEVICE", "deviceIds", List.of("launcher_38mm"),
+                "actions", List.of("fire")), operator());
+        Map<String, Object> token = service.confirmToken("robot-001", object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "launcher_38mm"), "action", "fire"), operator());
+        Map<String, Object> request = object(
+                "controlSessionId", session.get("controlSessionId"),
+                "target", object("deviceId", "launcher_38mm"),
+                "action", "fire", "params", object("tube", 3,
+                        "confirmToken", token.get("confirmToken")));
+        CountDownLatch start = new CountDownLatch(1);
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        try {
+            java.util.concurrent.Callable<Boolean> fire = () -> {
+                start.await();
+                try {
+                    service.publishCommand("robot-001", request, operator());
+                    return true;
+                } catch (IllegalArgumentException exception) {
+                    return false;
+                }
+            };
+            Future<Boolean> first = executor.submit(fire);
+            Future<Boolean> second = executor.submit(fire);
+            start.countDown();
+            assertThat(List.of(first.get(5, TimeUnit.SECONDS), second.get(5, TimeUnit.SECONDS)))
+                    .containsExactlyInAnyOrder(true, false);
+            verify(commandPublisher).publishCommand(eq("robot-001"), any());
+        } finally {
+            executor.shutdownNow();
+        }
+    }
+
     private Map<String, Object> publish(String deviceId, String action, Map<String, Object> params) {
+        online("手动模式");
         Map<String, Object> request = object(
                 "target", object("deviceId", deviceId),
                 "action", action,
                 "params", params,
                 "client", object("seq", 7));
-        if ("base".equals(deviceId) && "drive.velocity".equals(action)) {
-            online("手动模式");
-            request.put("controlSessionId", acquireBase().get("controlSessionId"));
+        if (!"get_state".equals(action)) {
+            Map<String, Object> session = "base".equals(deviceId) && "drive.velocity".equals(action)
+                    ? acquireBase()
+                    : service.acquire("robot-001", object(
+                            "scope", "base".equals(deviceId) ? "ROBOT" : "DEVICE",
+                            "deviceIds", List.of(deviceId), "actions", List.of(action)), operator());
+            request.put("controlSessionId", session.get("controlSessionId"));
+            if ("fire".equals(action)) {
+                Map<String, Object> confirmation = service.confirmToken("robot-001", object(
+                        "controlSessionId", session.get("controlSessionId"),
+                        "target", object("deviceId", deviceId), "action", action), operator());
+                params.put("confirmToken", confirmation.get("confirmToken"));
+            }
         }
         service.publishCommand("robot-001", request, operator());
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
@@ -1496,6 +1723,12 @@ class EquipmentControlServiceTest {
                                         "tube", 3,
                                         "loaded", tubeLoaded,
                                         "state", tubeLoaded ? 1 : 0)))))));
+    }
+
+    private Map<String, Object> launcherRuntime(String deviceId) {
+        return object("deviceId", deviceId, "deviceType", "LAUNCHER", "onlineStatus", "online",
+                "status", object("connected", true, "safetySwitchEnabled", true,
+                        "tubes", List.of(object("tube", 3, "loaded", true, "state", 1))));
     }
 
     private Map<String, Object> acquireBase() {
